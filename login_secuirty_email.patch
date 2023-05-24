@@ -1,0 +1,71 @@
+diff --git a/login_security/login_security.module b/login_security/login_security.module
+index 1e473c8f..1c03f5e1 100644
+--- a/login_security/login_security.module
++++ b/login_security/login_security.module
+@@ -77,14 +77,26 @@ function login_security_set_login_timestamp(array $form, FormStateInterface $for
+   $ip_address = \Drupal::request()->getClientIp();
+   $account = _login_security_user_load_by_name($form_state->getValue('name'));
+   _login_security_add_event($account->getAccountName(), $ip_address);
+-
++  $name = $form_state->getValue('name');
+   // For active users set static login and access:
+   $account = \Drupal::database()->select('users_field_data', 'u')
+     ->fields('u', ['login', 'access'])
+-    ->condition('name', $form_state->getValue('name'))
++    ->condition('name', $name)
+     ->condition('status', 1)
+     ->execute()
+     ->fetchAssoc();
++    if (empty($account)) {
++      $accountuser = user_load_by_mail($name);
++    }
++    if(!empty($accountuser)) {
++      $name = $accountuser->name->value;
++      $account = \Drupal::database()->select('users_field_data', 'u')
++       ->fields('u', ['login', 'access'])
++       ->condition('name', $name)
++       ->condition('status', 1)
++       ->execute()
++       ->fetchAssoc();
++    }
+   if (!empty($account)) {
+     // @todo This implementation using static is dirty!
+     _login_security_login_timestamp($account['login']);
+@@ -420,8 +432,11 @@ function _login_security_user_load_by_name($name = NULL) {
+     $account = user_load_by_name($name);
+     // If the user does not exist, return the anonymous user.
+     if (empty($account)) {
++      $account = user_load_by_mail($name);
+       // https://drupal.org/node/1744704
++      if (empty($account)) {
+       $account = User::load(0);
++      }
+     }
+   }
+   return $account;
+@@ -441,6 +456,7 @@ function _login_security_get_variables_by_name($name = NULL) {
+ 
+   $config = \Drupal::config('login_security.settings');
+   $account = _login_security_user_load_by_name($name);
++ 
+   $ipaddress = \Drupal::request()->getClientIp();
+   $request_time = \Drupal::time()->getRequestTime();
+   $variables = [
+@@ -457,7 +473,7 @@ function _login_security_get_variables_by_name($name = NULL) {
+     '@user_block_attempts' => $config->get('user_wrong_count'),
+     '@user_ip_current_count' => \Drupal::database()->select('login_security_track', 'lst')
+       ->fields('lst', ['id'])
+-      ->condition('name', $name)
++      ->condition('name', $account->getAccountName())
+       ->condition('host', $ipaddress)
+       ->countQuery()
+       ->execute()
+@@ -470,7 +486,7 @@ function _login_security_get_variables_by_name($name = NULL) {
+       ->fetchField(),
+     '@user_current_count' => \Drupal::database()->select('login_security_track', 'lst')
+       ->fields('lst', ['id'])
+-      ->condition('name', $name)
++      ->condition('name', $account->getAccountName())
+       ->countQuery()
+       ->execute()
+       ->fetchField(),
